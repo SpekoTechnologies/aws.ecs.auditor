@@ -83,26 +83,30 @@ class AwsEcsAuditor
     puts NEW_LINE
 
     puts '----Gathered Metrics----'
-    puts 'Available number of ECS Services: ' + list_services.count.to_s
-    puts 'Number of tasks per EC2 Instance: ' + @number_of_tasks_per_ec2_instance.to_s
+    puts 'Number of ECS Services in this Cluster: ' + list_services.count.to_s
+    puts 'Number of ECS Tasks per ECS Host: ' + @number_of_tasks_per_ec2_instance.to_s
 
     puts NEW_LINE
 
-    puts 'Minimum tasks required: ' + total_min_desired_tasks.to_s
-    puts 'Number of running tasks: ' + total_running_desired_tasks.to_s
-    puts 'Maximum tasks allowable: ' + max_number_of_running_tasks.to_s
+    puts 'Minimum tasks required across all services: ' + total_min_desired_tasks.to_s
+    puts 'Number of running tasks across all services: ' + total_running_desired_tasks.to_s
+    puts 'Maximum tasks allowable across all services: ' + max_number_of_running_tasks.to_s
 
     puts NEW_LINE
-    puts 'Minimum number of EC2 Instances: ' + describe_autoscaling_group[:min_size].to_s
-    puts 'Running number of EC2 Instances: ' + describe_autoscaling_group[:desired_capacity].to_s
-    puts 'Maximum number of EC2 Instances: ' + describe_autoscaling_group[:max_size].to_s
+    puts 'Current value for Minimum number of EC2 Instances: ' + describe_autoscaling_group[:min_size].to_s
+    puts 'Current value for Running number of EC2 Instances: ' + describe_autoscaling_group[:desired_capacity].to_s
+    puts 'Current value for Maximum number of EC2 Instances: ' + describe_autoscaling_group[:max_size].to_s
 
     puts NEW_LINE
 
-    puts '----Calculated Metrics----'
-    puts 'Number of instances needed for minimum tasks required: ' + (total_min_desired_tasks / @number_of_tasks_per_ec2_instance).to_s
-    puts 'Number of instances needed for maximum tasks required: ' + (max_number_of_running_tasks / @number_of_tasks_per_ec2_instance).to_s
-    puts 'Number of instances needed for number of running tasks: ' + (total_running_desired_tasks / @number_of_tasks_per_ec2_instance).to_s
+    puts '----Analysis----'
+    new_min_instance_count = (total_min_desired_tasks / @number_of_tasks_per_ec2_instance) + (list_services.count / @number_of_tasks_per_ec2_instance)
+    current_number_of_instances_required = (total_running_desired_tasks / @number_of_tasks_per_ec2_instance) + (list_services.count / @number_of_tasks_per_ec2_instance)
+    
+    puts 'Number of instances needed for current number of running tasks: ' + current_number_of_instances_required.to_s + ' (including room to scale by 1 task per servcie)'
+    puts 'We should set the minimum number of EC2 Hosts for the cluster from ' + describe_autoscaling_group[:min_size].to_s + ' to ' + new_min_instance_count.to_s + ' (including room to scale by 1 task per servcie)'
+    puts 'We should set the maximum number of EC2 Hosts for the cluster from ' + describe_autoscaling_group[:max_size].to_s + ' to ' + (max_number_of_running_tasks / @number_of_tasks_per_ec2_instance).to_s
+
   end
 end
 
