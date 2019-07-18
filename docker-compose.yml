@@ -1,0 +1,13 @@
+version: '3'
+services:
+  service:
+    build: .
+    image: speko/aws.ecs.auditor
+    container_name: speko.aws.ecs.auditor
+    volumes:
+      - ./src:/usr/src/app/
+    environment:
+      - AWS_REGION
+      - AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY
+      - CLUSTER_NAME
