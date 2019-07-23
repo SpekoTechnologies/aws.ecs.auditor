@@ -1,6 +1,7 @@
 require 'aws-sdk-autoscaling'
 require 'aws-sdk-ecs'
 require 'aws-sdk-applicationautoscaling'
+require 'pp'
 
 NEW_LINE = "\n"
 
@@ -67,12 +68,23 @@ class AwsEcsAuditor
     @total_running_desired_tasks ||= describe_services.map(&:running_count).inject(0, :+)
   end
 
-  def max_number_of_running_tasks
+  def describe_scalable_targets
     services = list_services.map { |s| "service/#{@cluster_name}/#{s}" }
-    @max_number_of_running_tasks ||= @aas_client.describe_scalable_targets(
+    @describe_scalable_targets ||= @aas_client.describe_scalable_targets(
       service_namespace: 'ecs',
       resource_ids: services
-    )[:scalable_targets].map(&:max_capacity).inject(0, :+)
+    )[:scalable_targets]
+  end
+
+  def max_number_of_running_tasks
+    @max_number_of_running_tasks ||= describe_scalable_targets.map(&:max_capacity).inject(0, :+)
+  end
+
+  def describe_scaling_policies(resource_id)
+    @aas_client.describe_scaling_policies({
+      service_namespace: 'ecs',
+      resource_id: resource_id
+    })
   end
 
   def report
@@ -99,14 +111,34 @@ class AwsEcsAuditor
 
     puts NEW_LINE
 
-    puts '----Analysis----'
+    puts '----Cluster Analysis----'
     new_min_instance_count = (total_min_desired_tasks / @number_of_tasks_per_ec2_instance) + (list_services.count / @number_of_tasks_per_ec2_instance)
     current_number_of_instances_required = (total_running_desired_tasks / @number_of_tasks_per_ec2_instance) + (list_services.count / @number_of_tasks_per_ec2_instance)
-    
+
     puts 'Number of instances needed for current number of running tasks: ' + current_number_of_instances_required.to_s + ' (including room to scale by 1 task per servcie)'
     puts 'We should set the minimum number of EC2 Hosts for the cluster from ' + describe_autoscaling_group[:min_size].to_s + ' to ' + new_min_instance_count.to_s + ' (including room to scale by 1 task per servcie)'
     puts 'We should set the maximum number of EC2 Hosts for the cluster from ' + describe_autoscaling_group[:max_size].to_s + ' to ' + (max_number_of_running_tasks / @number_of_tasks_per_ec2_instance).to_s
 
+    puts NEW_LINE
+
+    puts '----Service Analysis----'
+
+    describe_scalable_targets.each do |service|
+      puts '// ' + service.resource_id.split('/')[2]
+      puts 'Scalable Dimension: ' + service.scalable_dimension.to_s
+      puts 'Min Capacity: ' + service.min_capacity.to_s + ', Max Capacity: ' + service.max_capacity.to_s
+      describe_scaling_policies(service.resource_id)[:scaling_policies].each do |policy|
+        puts 'Policy Name: ' + policy.policy_name + ', Policy Type: ' + policy.policy_type
+        puts '--> Adjustment Type: ' + policy.step_scaling_policy_configuration.adjustment_type
+        puts '--> Cool Down: ' + policy.step_scaling_policy_configuration.cooldown.to_s
+
+        policy.step_scaling_policy_configuration.step_adjustments.each do |step|
+          puts '--> Step Adjustments --> Metric Interval Lower Bound: ' + step.metric_interval_lower_bound.to_s + ', Metric Interval Upper Bound: ' + step.metric_interval_upper_bound.to_s + ', Scaling Adjustment: ' + step.scaling_adjustment.to_s
+        end
+      end
+      puts NEW_LINE
+    end
+    puts NEW_LINE
   end
 end
 
